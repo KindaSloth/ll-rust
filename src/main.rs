@@ -1,9 +1,9 @@
-use std::mem;
+use std::{rc::Rc, cell::RefCell};
 
 #[derive(Clone, Debug)]
 enum LinkedList<T: Clone + Eq> {
     Nil,
-    Cons { value: T, next: Box<LinkedList<T>> }
+    Cons { value: T, next: Rc<RefCell<LinkedList<T>>> }
 }
 
 impl<T: Clone + Eq> Default for LinkedList<T> {
@@ -26,12 +26,30 @@ impl<T: Clone + Eq> LinkedList<T> {
             Nil => {
                 *self = Cons {
                     value,
-                    next: Box::new(Nil)
+                    next: Rc::new(RefCell::new(Nil))
                 }
             },
             Cons { value: _, next } => { 
-                next.append(value)
+                next.borrow_mut().append(value)
             },
+        }
+    }
+
+    fn get_value(&self) -> Option<T> {
+        use LinkedList::*;
+
+        match self {
+            Nil => None,
+            Cons { value, next: _ } => Some(value.clone())
+        }
+    }
+
+    fn get_next(&self) -> Option< Rc<RefCell<LinkedList<T>>>> {
+        use LinkedList::*;
+
+        match self {
+            Nil => None,
+            Cons { value: _, next } => Some(Rc::clone(next))
         }
     }
 
@@ -40,16 +58,22 @@ impl<T: Clone + Eq> LinkedList<T> {
 
         match self {
             Nil => (),
-            Cons { value: node_value, next } => {
+            Cons { value: node_value, next: ref_next } => {
                 if &value == node_value {
-                    let x = mem::take(next);
+                    let next = Rc::clone(ref_next);
 
-                    *self = *x;
+                    let borrowed_next = next.borrow();
+
+                    if let (Some(x), Some(y)) = (borrowed_next.get_value(), borrowed_next.get_next()) {
+                        *self = Cons { value: x, next: y }
+                    } else {
+                        *self = Nil
+                    }
 
                     return;
                 }
 
-                next.delete(value)
+                ref_next.borrow_mut().delete(value)
             }
         }
     }
@@ -64,7 +88,7 @@ impl<T: Clone + Eq> LinkedList<T> {
                     return Some(value);
                 }
 
-                next.get(value)
+                next.borrow_mut().get(value)
             }
         }
     }
@@ -78,12 +102,18 @@ impl<T: Clone + Eq> Iterator for LinkedList<T> {
 
         match self {
             Nil => None,
-            Cons { value: node_value, next } => {
+            Cons { value: node_value, next: ref_next } => {
                 let value = node_value.clone();
 
-                let x = mem::take(next);
+                let next = Rc::clone(ref_next);
 
-                *self = *x;
+                let borrowed_next = next.borrow();
+
+                if let (Some(x), Some(y)) = (borrowed_next.get_value(), borrowed_next.get_next()) {
+                    *self = Cons { value: x, next: y }
+                } else {
+                    *self = Nil
+                }
 
                 Some(value)
             }
